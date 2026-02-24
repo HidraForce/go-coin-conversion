@@ -1,59 +1,53 @@
 package main
 
 import (
-	"bufio"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
-	"fmt"
 )
 
-type Data struct {
-	Currency string
-	Value    string
+type ExchangeData struct {
+	Base  string             `json:"base"`
+	Date  string             `json:"date"`
+	Rates map[string]float64 `json:"rates"`
 }
 
-func readFile() map[string]Data {
-	currency, err := os.Open("currency.txt")
+func readFile() ExchangeData {
+	file, err := os.Open("currency.json")
 	if err != nil {
 		panic(err)
 	}
-	defer currency.Close()
-	dataPopulate := make(map[string]Data)
-	scanData := bufio.NewScanner(currency)
-	for scanData.Scan() {
-		line := scanData.Text()
-		splitLine := strings.Split(line, ";")
-		if len(splitLine) == 2 {
-			dataPopulate[splitLine[0]] = Data{
-				Currency: splitLine[0],
-				Value:    splitLine[1],
-			}
-		}
+	defer file.Close()
+
+	var data ExchangeData
+	err = json.NewDecoder(file).Decode(&data)
+	if err != nil {
+		panic(err)
 	}
 
-	return dataPopulate
+	return data
 }
 
 func getAvailableCurrencies() []string {
 	data := readFile()
-	currencies := make([]string, 0, len(data))
-	for key := range data {
+	currencies := make([]string, 0, len(data.Rates))
+	for key := range data.Rates {
 		currencies = append(currencies, key)
 	}
 	return currencies
 }
 
-func getChosenValue(chosenCurrency string) (string, error) {
+func getChosenValue(chosenCurrency string) (float64, error) {
 	data := readFile()
-	for _, value := range data {
-		if value.Currency == chosenCurrency {
-			return value.Value, nil
-		}
+	rate, ok := data.Rates[chosenCurrency]
+	if !ok {
+		return 0, errors.New("Currency not found")
 	}
-	return "", errors.New("Currency not found")
+	return rate, nil
 }
 
 func validateValue(value string) (float64, error) {
@@ -66,21 +60,14 @@ func validateValue(value string) (float64, error) {
 }
 
 func convertCurrency(value float64, to string) string {
-	coinS, err := getChosenValue(to)
+	rate, err := getChosenValue(to)
 	if err != nil {
 		log.Printf("Error getting chosen value: %v", err)
 		return ""
 	}
 
-	coinF, err := strconv.ParseFloat(coinS, 64)
-	if err != nil {
-		log.Printf("Error parsing coin value: %v", err)
-		return ""
-	}
-	valueConverted := value * coinF
-
+	valueConverted := value * rate
 	return strconv.FormatFloat(valueConverted, 'f', 2, 64)
-
 }
 
 func readValue() string {
@@ -97,7 +84,7 @@ func readCurrency() string {
 
 func isValidCurrency(currency string, available []string) bool {
 	for _, c := range available {
-		if c == currency {
+		if strings.EqualFold(c, currency) {
 			return true
 		}
 	}
